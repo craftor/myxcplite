@@ -14,12 +14,12 @@
 // XCP params
 
 #define OPTION_PROJECT_NAME "xcp_slave_demo" // Project name, used to build the A2L and BIN file name
-#define OPTION_PROJECT_EPK __TIME__     // EPK version string
-#define OPTION_USE_TCP true             // TCP or UDP
-#define OPTION_SERVER_PORT 5555         // Port
-#define OPTION_SERVER_ADDR {0, 0, 0, 0} // Bind addr, 0.0.0.0 = ANY
-#define OPTION_QUEUE_SIZE 1024 * 16     // Size of the measurement queue in bytes, must be a multiple of 8
-#define OPTION_LOG_LEVEL 5              // Log level, 0 = no log, 1 = error, 2 = warning, 3 = info, 4 = debug, 5 = verbose
+#define OPTION_PROJECT_EPK __TIME__          // EPK version string
+#define OPTION_USE_TCP true                  // TCP or UDP
+#define OPTION_SERVER_PORT 5555              // Port
+#define OPTION_SERVER_ADDR {0, 0, 0, 0}      // Bind addr, 0.0.0.0 = ANY
+#define OPTION_QUEUE_SIZE 1024 * 16          // Size of the measurement queue in bytes, must be a multiple of 8
+#define OPTION_LOG_LEVEL 5                   // Log level, 0 = no log, 1 = error, 2 = warning, 3 = info, 4 = debug, 5 = verbose
 
 // New option in V1.1: Enable variadic all in one macros for simple arithmetic types, see examples below
 #define OPTION_USE_VARIADIC_MACROS
@@ -32,10 +32,11 @@ typedef struct params {
     uint16_t counter_max; // Maximum value for the counter
     uint32_t delay_us;    // Sleep time in microseconds for the main loop
     float flow_rate;      // Flow rate in m3/h
+    uint8_t map[64];      // 64-byte calibration map for block download test
 } parameters_t;
 
 // Default values (reference page, "FLASH") for the calibration parameters
-const parameters_t params = {.counter_max = 1024, .delay_us = 1000, .flow_rate = 0.300f};
+const parameters_t params = {.counter_max = 1024, .delay_us = 1000, .flow_rate = 0.300f, .map = {0}};
 
 // A global calibration segment handle for the calibration parameters
 // A calibration segment has a working page ("RAM") and a reference page ("FLASH"), it is described by a MEMORY_SEGMENT in the A2L file
@@ -53,6 +54,7 @@ uint8_t inside_temperature = 20 + 55;
 double heat_energy = 0.0f;
 // A global counter limited by the calibration parameter counter_max
 uint32_t global_counter = 0;
+uint8_t waveform_data[128]; // Waveform data array for testing large measurement packets
 
 //-----------------------------------------------------------------------------------------------------
 // Read sensor values
@@ -152,6 +154,7 @@ int main(void) {
     A2lCreateParameter(params.counter_max, "Maximum counter value", "", 0, 65535);
     A2lCreateParameter(params.delay_us, "Mainloop delay time in us", "us", 0, 999999);
     A2lCreateParameter(params.flow_rate, "Flow rate", "m3/h", 0.0, 2.0);
+    A2lCreateCurve(params.map, 64, "Calibration Map", "", 0, 255);
 
     // XCP: Option2: Register the calibration segment as a typedef instance
     // {
@@ -177,6 +180,7 @@ int main(void) {
     A2lCreatePhysMeasurement(inside_temperature, "Temperature in °C read from inside sensor", "conv.temperature", 0, 40);
     A2lCreatePhysMeasurement(heat_energy, "Accumulated heat energy in kWh", "kWh", 0.0, 10000.0);
     A2lCreateMeasurement(global_counter, "Global free running counter");
+    A2lCreateMeasurementArray(waveform_data, "Waveform data array");
 
     // XCP: Register local measurement variables on event "mainloop"
     A2lSetStackAddrMode(mainloop); // Set stack relative addressing mode with fixed event mainloop
@@ -206,6 +210,11 @@ int main(void) {
         outside_temperature = read_outside_sensor();
         double heat_power = calc_power(outside_temperature, inside_temperature); // Demo function to calculate heat power in W
         heat_energy += heat_power / 1000.0 * (double)delay_us / 3600e6;          // Integrate heat energy in kWh in a global measurement variable, kWh = W/1000  * us/ 3600e6
+
+        // Update waveform data
+        for (int i = 0; i < 128; i++) {
+            waveform_data[i] = (uint8_t)((global_counter + i) % 256);
+        }
 
         // XCP: Unlock the calibration segment
         XcpUnlockCalSeg(calseg);

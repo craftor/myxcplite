@@ -1,79 +1,143 @@
 import socket
 import struct
 import time
+import random
 
 HOST = '127.0.0.1'
 PORT = 5555
 
+def connect(s):
+    print("Connecting...")
+    # CONNECT (PID=0xFF, Mode=0x00)
+    cmd = b'\xFF\x00'
+    send_cmd(s, cmd)
+    resp = recv_resp(s)
+    if resp[0] != 0xFF:
+        print(f"Connect failed: {resp.hex()}")
+        return False
+    print("Connect OK")
+    return True
+
+def disconnect(s):
+    print("Disconnecting...")
+    # DISCONNECT (PID=0xFE)
+    cmd = b'\xFE'
+    send_cmd(s, cmd)
+    recv_resp(s)
+    print("Disconnected.")
+
+def get_status(s):
+    # GET_STATUS (PID=0xFD)
+    cmd = b'\xFD'
+    send_cmd(s, cmd)
+    resp = recv_resp(s)
+    if resp[0] == 0xFF:
+        print(f"Status: {resp.hex()}")
+    else:
+        print(f"Get Status failed: {resp.hex()}")
+
+def get_id(s):
+    # GET_ID (PID=0xFA, Type=0)
+    cmd = b'\xFA\x00'
+    send_cmd(s, cmd)
+    resp = recv_resp(s)
+    if resp[0] == 0xFF:
+        # Mode (1) | Len (4) | Data...
+        length = struct.unpack('<I', resp[4:8])[0]
+        # Data starts at index 8? No, let's check standard.
+        # GET_ID Response: PID(1) | Mode(1) | Res(2) | Len(4) | Data...
+        # Wait, standard says: PID(1) | Mode(1) | Res(2) | Length(4) | ...
+        # My struct unpack might be off if I don't handle headers.
+        # Let's just print hex.
+        print(f"ID Info: {resp.hex()}")
+    else:
+        print(f"Get ID failed: {resp.hex()}")
+
+def set_mta(s, addr, addr_ext=0):
+    # SET_MTA (PID=0xF6, Res(2), AddrExt(1), Addr(4))
+    cmd = struct.pack('<BxxBI', 0xF6, addr_ext, addr)
+    send_cmd(s, cmd)
+    resp = recv_resp(s)
+    if resp[0] != 0xFF:
+        print(f"Set MTA failed: {resp.hex()}")
+
+def short_download(s, addr, val):
+    # SHORT_DOWNLOAD (PID=0xF4, N(1), Res(1), AddrExt(1), Addr(4), Data(2))
+    cmd = struct.pack('<BBBBIH', 0xF4, 2, 0, 0, addr, val)
+    send_cmd(s, cmd)
+    resp = recv_resp(s)
+    if resp[0] != 0xFF:
+        print(f"Short Download failed: {resp.hex()}")
+
+def download(s, data):
+    # DOWNLOAD (PID=0xF0, N(1), Data...)
+    # Max N depends on CTO. Assuming we can send chunks.
+    # Let's send in chunks of 32 bytes to be safe.
+    chunk_size = 32
+    for i in range(0, len(data), chunk_size):
+        chunk = data[i:i+chunk_size]
+        n = len(chunk)
+        cmd = struct.pack('<BB', 0xF0, n) + chunk
+        send_cmd(s, cmd)
+        resp = recv_resp(s)
+        if resp[0] != 0xFF:
+            print(f"Download failed at offset {i}: {resp.hex()}")
+            return
+
+def send_cmd(s, cmd):
+    global ctr
+    header = struct.pack('<HH', len(cmd), ctr)
+    s.sendall(header + cmd)
+    ctr += 1
+
+def recv_resp(s):
+    resp_header = s.recv(4)
+    if not resp_header: return b''
+    resp_len, resp_ctr = struct.unpack('<HH', resp_header)
+    resp_data = s.recv(resp_len)
+    return resp_data
+
+ctr = 0
+
 def main():
-    print(f"Connecting to XCP Slave at {HOST}:{PORT}")
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((HOST, PORT))
     except ConnectionRefusedError:
-        print("Connection failed. Is the slave running?")
+        print("Connection failed.")
         return
 
-    print("Connected.")
-    ctr = 0
-
-    # 1. Send CONNECT (PID=0xFF, Mode=0x00)
-    cmd = b'\xFF\x00'
-    header = struct.pack('<HH', len(cmd), ctr)
-    s.sendall(header + cmd)
-    ctr += 1
-
-    resp_header = s.recv(4)
-    resp_len, resp_ctr = struct.unpack('<HH', resp_header)
-    resp_data = s.recv(resp_len)
-    if resp_data[0] != 0xFF:
-        print(f"Connect failed: {resp_data.hex()}")
+    if not connect(s):
         return
-    print("Connect OK")
 
-    # 2. Loop sending SHORT_DOWNLOAD to modify counter_max
-    # counter_max address is 0x80010000 (from previous logs)
-    # SHORT_DOWNLOAD: PID(0xF4) | N(1) | Res(1) | AddrExt(1) | Addr(4) | Data...
-    
-    ADDRESS = 0x80010000
-    LOOP_COUNT = 10
+    get_status(s)
+    get_id(s)
 
+    # Addresses
+    ADDR_COUNTER_MAX = 0x80010000
+    ADDR_MAP = 0x8001000C
+
+    # Loop
+    LOOP_COUNT = 5
     for i in range(LOOP_COUNT):
-        val = 1024 + i
-        print(f"[{i+1}/{LOOP_COUNT}] Setting counter_max to {val}")
+        print(f"\n--- Loop {i+1} ---")
         
-        # PID=0xF4 (SHORT_DOWNLOAD), N=2 bytes, Res=0, AddrExt=0, Addr=ADDRESS
-        # Data = val (uint16 little endian)
-        # Struct format: B B B B I H
-        cmd = struct.pack('<BBBBIH', 0xF4, 2, 0, 0, ADDRESS, val)
-        
-        header = struct.pack('<HH', len(cmd), ctr)
-        s.sendall(header + cmd)
-        ctr += 1
-        
-        # Receive response
-        resp_header = s.recv(4)
-        if not resp_header: break
-        resp_len, resp_ctr = struct.unpack('<HH', resp_header)
-        resp_data = s.recv(resp_len)
-        
-        if resp_data[0] != 0xFF:
-            print(f"Error response: {resp_data.hex()}")
-        
-        time.sleep(0.5)
+        # 1. Short Download to counter_max
+        val = 1000 + i * 10
+        print(f"Setting counter_max to {val}")
+        short_download(s, ADDR_COUNTER_MAX, val)
 
-    # 3. Send DISCONNECT (PID=0xFE)
-    cmd = b'\xFE'
-    header = struct.pack('<HH', len(cmd), ctr)
-    s.sendall(header + cmd)
-    ctr += 1
+        # 2. Block Download to map
+        # Create a pattern
+        map_data = bytes([(x + i) % 256 for x in range(64)])
+        print(f"Downloading 64 bytes to map (Pattern start {i})")
+        set_mta(s, ADDR_MAP)
+        download(s, map_data)
 
-    resp_header = s.recv(4)
-    resp_len, resp_ctr = struct.unpack('<HH', resp_header)
-    resp_data = s.recv(resp_len)
-    
+        time.sleep(1)
+
+    disconnect(s)
     s.close()
-    print("Disconnected.")
 
 if __name__ == "__main__":
     main()
