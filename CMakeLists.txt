@@ -157,6 +157,13 @@ add_executable(hello_xcp ${hello_xcp_SOURCES})
 target_include_directories(hello_xcp PUBLIC "${PROJECT_ROOT}/inc")
 target_link_libraries(hello_xcp PRIVATE xcplib)
 
+# Example xcp_slave_demo
+set(xcp_slave_demo_SOURCES examples/xcp_slave_demo/src/main.c)   
+set_source_files_properties(${xcp_slave_demo_SOURCES} PROPERTIES LANGUAGE C)
+add_executable(xcp_slave_demo ${xcp_slave_demo_SOURCES})
+target_include_directories(xcp_slave_demo PUBLIC "${PROJECT_ROOT}/inc")
+target_link_libraries(xcp_slave_demo PRIVATE xcplib)
+
 # Example no_a2l_demo
 set(no_a2l_demo_SOURCES examples/no_a2l_demo/src/main.c)   
 set_source_files_properties(${no_a2l_demo_SOURCES} PROPERTIES LANGUAGE C)
