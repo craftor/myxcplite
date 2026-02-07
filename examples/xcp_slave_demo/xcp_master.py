@@ -118,23 +118,64 @@ def main():
     ADDR_MAP = 0x8001000C
 
     # Loop
-    LOOP_COUNT = 5
-    for i in range(LOOP_COUNT):
-        print(f"\n--- Loop {i+1} ---")
+    # LOOP_COUNT = 5
+    # for i in range(LOOP_COUNT):
+    #     print(f"\n--- Loop {i+1} ---")
         
-        # 1. Short Download to counter_max
-        val = 1000 + i * 10
-        print(f"Setting counter_max to {val}")
-        short_download(s, ADDR_COUNTER_MAX, val)
+    #     # 1. Short Download to counter_max
+    #     val = 1000 + i * 10
+    #     print(f"Setting counter_max to {val}")
+    #     short_download(s, ADDR_COUNTER_MAX, val)
 
-        # 2. Block Download to map
-        # Create a pattern
-        map_data = bytes([(x + i) % 256 for x in range(64)])
-        print(f"Downloading 64 bytes to map (Pattern start {i})")
-        set_mta(s, ADDR_MAP)
-        download(s, map_data)
+    #     # 2. Block Download to map
+    #     # Create a pattern
+    #     map_data = bytes([(x + i) % 256 for x in range(64)])
+    #     print(f"Downloading 64 bytes to map (Pattern start {i})")
+    #     set_mta(s, ADDR_MAP)
+    #     download(s, map_data)
 
-        time.sleep(1)
+    #     time.sleep(1)
+
+    # Latency Test
+    print("\n--- Starting Latency Test ---")
+    LATENCY_LOOPS = 1000
+    DELAY_BETWEEN_PACKETS = 0.001 # 100us
+    
+    total_latency = 0.0
+    min_latency = float('inf')
+    max_latency = 0.0
+
+    # We will use SHORT_DOWNLOAD to update counter_max as the test packet
+    # It is a small packet (8 bytes payload + header)
+    
+    for i in range(LATENCY_LOOPS):
+        start_time = time.perf_counter()
+        
+        # Send packet
+        # short_download(s, ADDR_COUNTER_MAX, 1000 + (i % 100))
+        # Inline short_download to avoid print overhead and measure strictly request-response
+        cmd = struct.pack('<BBBBIH', 0xF4, 2, 0, 0, ADDR_COUNTER_MAX, 1000 + (i % 100))
+        send_cmd(s, cmd)
+        resp = recv_resp(s)
+        
+        end_time = time.perf_counter()
+        
+        if resp[0] != 0xFF:
+            print(f"Error in loop {i}: {resp.hex()}")
+            break
+            
+        latency = (end_time - start_time) * 1000000 # us
+        total_latency += latency
+        if latency < min_latency: min_latency = latency
+        if latency > max_latency: max_latency = latency
+        
+        time.sleep(DELAY_BETWEEN_PACKETS)
+
+    avg_latency = total_latency / LATENCY_LOOPS
+    print(f"Latency Test Completed ({LATENCY_LOOPS} iterations)")
+    print(f"Average Latency: {avg_latency:.2f} us")
+    print(f"Min Latency: {min_latency:.2f} us")
+    print(f"Max Latency: {max_latency:.2f} us")
 
     disconnect(s)
     s.close()
