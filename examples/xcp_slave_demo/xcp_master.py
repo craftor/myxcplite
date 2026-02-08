@@ -139,7 +139,7 @@ def main():
     # Latency Test
     print("\n--- Starting Latency Test ---")
     LATENCY_LOOPS = 1000
-    DELAY_BETWEEN_PACKETS = 0.001 # 100us
+    DELAY_BETWEEN_PACKETS = 0.0002 # 200us
     
     total_latency = 0.0
     min_latency = float('inf')
