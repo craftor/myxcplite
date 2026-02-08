@@ -20,6 +20,7 @@
 #define OPTION_SERVER_ADDR {0, 0, 0, 0}      // Bind addr, 0.0.0.0 = ANY
 #define OPTION_QUEUE_SIZE 1024 * 16          // Size of the measurement queue in bytes, must be a multiple of 8
 #define OPTION_LOG_LEVEL 5                   // Log level, 0 = no log, 1 = error, 2 = warning, 3 = info, 4 = debug, 5 = verbose
+#define OPTION_PRINT_COUNTER_RESET 0         // Print counter reset message (0 = off, 1 = on)
 
 // New option in V1.1: Enable variadic all in one macros for simple arithmetic types, see examples below
 #define OPTION_USE_VARIADIC_MACROS
@@ -200,7 +201,9 @@ int main(void) {
         // Local variables
         counter++;
         if (counter > params->counter_max) { // Get the counter_max calibration value and reset counter
-            printf("%u: params.counter_max = %u\n", counter, params->counter_max);
+            if (OPTION_PRINT_COUNTER_RESET) {
+                printf("%u: params.counter_max = %u\n", counter, params->counter_max);
+            }
             counter = 0;
         }
 

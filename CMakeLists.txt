@@ -164,6 +164,12 @@ add_executable(xcp_slave_demo ${xcp_slave_demo_SOURCES})
 target_include_directories(xcp_slave_demo PUBLIC "${PROJECT_ROOT}/inc")
 target_link_libraries(xcp_slave_demo PRIVATE xcplib)
 
+# Example xcp_master_c
+set(xcp_master_c_SOURCES examples/xcp_master_c/src/main.c)   
+set_source_files_properties(${xcp_master_c_SOURCES} PROPERTIES LANGUAGE C)
+add_executable(xcp_master_c ${xcp_master_c_SOURCES})
+target_include_directories(xcp_master_c PUBLIC "${PROJECT_ROOT}/inc")
+
 # Example no_a2l_demo
 set(no_a2l_demo_SOURCES examples/no_a2l_demo/src/main.c)   
 set_source_files_properties(${no_a2l_demo_SOURCES} PROPERTIES LANGUAGE C)
