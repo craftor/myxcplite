@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 static uint16_t ctr = 0;
+static int use_udp = 0;
 
 static int send_cmd(int s, const uint8_t *cmd, uint16_t len) {
     if (len > 1024)
@@ -30,18 +31,33 @@ static int send_cmd(int s, const uint8_t *cmd, uint16_t len) {
 }
 
 static int recv_resp(int s, uint8_t *buf, uint16_t *len_out) {
-    uint8_t hdr[4];
-    ssize_t n = recv(s, hdr, 4, MSG_WAITALL);
-    if (n != 4)
-        return -1;
-    uint16_t len = (uint16_t)hdr[0] | ((uint16_t)hdr[1] << 8);
-    if (len > 1024)
-        return -1;
-    n = recv(s, buf, len, MSG_WAITALL);
-    if (n != len)
-        return -1;
-    *len_out = len;
-    return 0;
+    if (use_udp) {
+        uint8_t tmp[4 + 1024];
+        ssize_t n = recv(s, tmp, sizeof(tmp), 0);
+        if (n < 4)
+            return -1;
+        uint16_t len = (uint16_t)tmp[0] | ((uint16_t)tmp[1] << 8);
+        if (len > 1024)
+            return -1;
+        if (n < (ssize_t)(4 + len))
+            return -1;
+        memcpy(buf, tmp + 4, len);
+        *len_out = len;
+        return 0;
+    } else {
+        uint8_t hdr[4];
+        ssize_t n = recv(s, hdr, 4, MSG_WAITALL);
+        if (n != 4)
+            return -1;
+        uint16_t len = (uint16_t)hdr[0] | ((uint16_t)hdr[1] << 8);
+        if (len > 1024)
+            return -1;
+        n = recv(s, buf, len, MSG_WAITALL);
+        if (n != len)
+            return -1;
+        *len_out = len;
+        return 0;
+    }
 }
 
 static int connect_xcp(int s) {
@@ -190,11 +206,17 @@ int main(int argc, char **argv) {
         }
     }
     fprintf(stderr, "Starting C Master latency test\n");
-    int s = socket(AF_INET, SOCK_STREAM, 0);
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--udp") == 0)
+            use_udp = 1;
+    }
+    int s = socket(AF_INET, use_udp ? SOCK_DGRAM : SOCK_STREAM, 0);
     if (s < 0)
         return 1;
-    int one = 1;
-    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    if (!use_udp) {
+        int one = 1;
+        setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    }
     fprintf(stderr, "Socket created\n");
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
